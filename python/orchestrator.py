@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 class Bid:
     agent_role: str
     cost: float
+    compatibility: float  # 0.0 to 1.0, higher is better
     estimated_time_ms: int
     current_load: int
     capacity: int
@@ -161,15 +162,19 @@ class CreditScoringOrchestrator:
                 logger.warning(f"[{stage.name}] No bids received")
                 return None
 
-            # Select lowest cost bid
-            lowest_bid = min(bids, key=lambda b: b.cost)
-            span.set_attribute("selected_agent", lowest_bid.agent_role)
-            span.set_attribute("selected_cost", lowest_bid.cost)
+            # Select best bid considering both cost and compatibility
+            # Score = (1 - cost/max_cost) * 0.5 + compatibility * 0.5
+            max_cost = max(b.cost for b in bids) if bids else 1.0
+            best_bid = min(bids, key=lambda b: (b.cost / max_cost) - (b.compatibility * 0.5))
+            
+            span.set_attribute("selected_agent", best_bid.agent_role)
+            span.set_attribute("selected_cost", best_bid.cost)
+            span.set_attribute("selected_compatibility", best_bid.compatibility)
             logger.info(
-                f"[{stage.name}] Selected agent: {lowest_bid.agent_role} "
-                f"(cost: {lowest_bid.cost:.2f})"
+                f"[{stage.name}] Selected agent: {best_bid.agent_role} "
+                f"(cost: {best_bid.cost:.2f}, compatibility: {best_bid.compatibility:.2f})"
             )
-            return lowest_bid
+            return best_bid
 
     async def execute_stage(
         self, stage: PipelineStage, applicant_data: Dict[str, Any], retry: int = 0

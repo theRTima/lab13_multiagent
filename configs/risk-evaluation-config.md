@@ -8,6 +8,8 @@ Evaluates overall credit risk by analyzing income stability, debt levels, and pa
 
 # Auction Subjects: auction.risk_evaluation
 
+# Specializations: data_collection=0.2, income_analysis=0.7, risk_evaluation=1.0
+
 ## Rules
 
 - risk.assess: Analyze income stability and debt-to-income ratio

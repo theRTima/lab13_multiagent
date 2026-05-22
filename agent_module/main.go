@@ -29,6 +29,7 @@ type Agent struct {
 	Rules              []string
 	NATSSpecialization string
 	AuctionSubjects    []string
+	Specializations    map[string]float64 // Task type -> compatibility score (0.0 to 1.0)
 	nc                 *nats.Conn
 	mu                 sync.Mutex
 	queueLength        int
@@ -63,6 +64,7 @@ type AuctionRequest struct {
 type Bid struct {
 	AgentRole       string    `json:"agent_role"`
 	Cost            float64   `json:"cost"`
+	Compatibility   float64   `json:"compatibility"` // 0.0 to 1.0, higher is better
 	EstimatedTime   int       `json:"estimated_time_ms"`
 	CurrentLoad     int       `json:"current_load"`
 	Capacity        int       `json:"capacity"`
@@ -79,6 +81,7 @@ func parseMarkdownConfig(filename string) (*Agent, error) {
 	agent := &Agent{
 		Rules:              []string{},
 		AuctionSubjects:    []string{},
+		Specializations:    make(map[string]float64),
 		maxCapacity:        100,
 		baseCost:           1.0,
 		costPerQueuedTask:  0.5,
@@ -102,6 +105,24 @@ func parseMarkdownConfig(filename string) (*Agent, error) {
 				trimmed := strings.TrimSpace(s)
 				if trimmed != "" {
 					agent.AuctionSubjects = append(agent.AuctionSubjects, trimmed)
+				}
+			}
+		}
+
+		if strings.HasPrefix(line, "# Specializations:") {
+			specs := strings.TrimSpace(strings.TrimPrefix(line, "# Specializations:"))
+			for _, spec := range strings.Split(specs, ",") {
+				trimmed := strings.TrimSpace(spec)
+				if trimmed != "" {
+					parts := strings.Split(trimmed, "=")
+					if len(parts) == 2 {
+						taskType := strings.TrimSpace(parts[0])
+						scoreStr := strings.TrimSpace(parts[1])
+						var score float64
+						if _, err := fmt.Sscanf(scoreStr, "%f", &score); err == nil {
+							agent.Specializations[taskType] = score
+						}
+					}
 				}
 			}
 		}
@@ -462,15 +483,25 @@ func (a *Agent) calculateBid(ctx context.Context, request AuctionRequest) Bid {
 	cost := a.baseCost + (a.costPerQueuedTask * float64(a.queueLength))
 	estimatedTime := 100 + (int(loadRatio) * 1000)
 
+	// Calculate compatibility score based on specializations
+	compatibility := 0.5 // Default compatibility
+	if a.Specializations != nil {
+		if score, ok := a.Specializations[request.TaskType]; ok {
+			compatibility = score
+		}
+	}
+
 	span.SetAttributes(
 		attribute.Float64("bid.load_ratio", loadRatio),
 		attribute.Float64("bid.base_cost", a.baseCost),
 		attribute.Float64("bid.cost_per_queued_task", a.costPerQueuedTask),
+		attribute.Float64("bid.compatibility", compatibility),
 	)
 
 	return Bid{
 		AgentRole:     a.Role,
 		Cost:          cost,
+		Compatibility: compatibility,
 		EstimatedTime: estimatedTime,
 		CurrentLoad:   a.queueLength,
 		Capacity:      a.maxCapacity,

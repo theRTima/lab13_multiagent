@@ -8,6 +8,8 @@ Analyzes applicant income from employment, investments, and other sources to det
 
 # Auction Subjects: auction.income_eval, auction.risk_evaluation
 
+# Specializations: data_collection=0.3, income_analysis=1.0, risk_evaluation=0.8
+
 ## Rules
 
 - income.validate: Verify income documentation and amounts

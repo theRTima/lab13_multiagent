@@ -8,6 +8,8 @@ Collects and validates applicant data from multiple sources (employment, identit
 
 # Auction Subjects: auction.data_collection
 
+# Specializations: data_collection=1.0, income_analysis=0.2, risk_evaluation=0.3
+
 ## Rules
 
 - data.collect: Gather applicant information and documents

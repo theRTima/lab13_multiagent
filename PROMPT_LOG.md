@@ -95,7 +95,7 @@ Final Result:
 ## Задание Повышенной сложности 6:Аукционное распределение задач
 ### Промпт 1
 **Инструмент:** Claude Haiku 4.5 в Agent режиме.
-**Промпт:** 
+**Промпт:** "Now create a model where agents are auctioning for the task. Each agent rates its ability and orchestrator schooses agent with least cost or best compatability"
 **Результат:** 
 ### Промпт 2
 ### Итого
@@ -106,7 +106,7 @@ Final Result:
 ## Задание Повышенной сложности 7:Интеграция LLM-агента
 ### Промпт 1
 **Инструмент:** Claude Haiku 4.5 в Agent режиме.
-**Промпт:** 
+**Промпт:** Use local Ollama with Qwen3.5:latest model to process messages. Implement a Risk Analysis system. Local model takes text and decides if there are risks - HIGH - MEDIUM - LOW. Orchestrator should block it if risk is HIGH, work if MEDIUM or LOW.
 **Результат:** 
 ### Промпт 2
 ### Итого
