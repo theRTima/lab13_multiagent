@@ -266,7 +266,7 @@ func (a *Agent) Close() {
 }
 
 func main() {
-	configFile := flag.String("config", "agent-config.md", "Path to markdown config file")
+	configFile := flag.String("config", "configs/income-analyzer-config.md", "Path to markdown config file")
 	natsURL := flag.String("nats", nats.DefaultURL, "NATS server URL")
 	flag.Parse()
 

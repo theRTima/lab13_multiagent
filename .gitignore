@@ -1,6 +1,8 @@
-# Go binaries
-agent
-agent.exe
+# Binaries
+/agent
+/test_client
+agent_module/lab13-multiagent
+cmd/test_client/cmd
 *.exe
 *.dll
 *.so
@@ -31,3 +33,4 @@ Thumbs.db
 *.local.md
 .env
 .env.local
+

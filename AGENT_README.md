@@ -4,15 +4,58 @@ Lightweight Go agent framework that reads Markdown configs and processes credit 
 
 ## Quick Start
 
+### Project Structure
+
+```
+lab13_multiagent/
+├── agent (binary)
+├── test_client (binary)
+├── go.work
+├── agent_module/
+│   ├── main.go
+│   ├── go.mod
+│   └── go.sum
+├── cmd/test_client/
+│   ├── main.go
+│   └── go.mod
+├── configs/
+│   └── income-analyzer-config.md
+└── ...
+```
+
+### Build
+
+From root directory:
+
 ```bash
-# Build
-go build -o agent .
+# Build agent
+cd agent_module && go build -o ../agent . && cd ..
 
-# Run with default config (agent connects to nats://localhost:4222)
-./agent -config income-analyzer-config.md
+# Build test_client
+cd cmd/test_client && go build -o ../../test_client . && cd ../..
+```
 
-# Run with custom NATS server
-./agent -config income-analyzer-config.md -nats nats://nats-server:4222
+### Run Agent
+
+```bash
+# Default config
+./agent
+
+# Custom config
+./agent -config configs/your-agent-config.md
+
+# Custom NATS
+./agent -nats nats://nats-server:4222
+```
+
+### Run Tests
+
+```bash
+# Auction request
+./test_client -subject auction.income_eval -type auction
+
+# Task request
+./test_client -subject income.analysis -type task
 ```
 
 ## Markdown Config Format
