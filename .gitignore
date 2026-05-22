@@ -1,0 +1,33 @@
+# Go binaries
+agent
+agent.exe
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go build cache
+.cache/
+*.o
+*.a
+
+# Dependency directories
+vendor/
+go.sum
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local config/secrets
+*.local.md
+.env
+.env.local
