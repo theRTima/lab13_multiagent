@@ -1,7 +1,7 @@
 ## Задание Повышенной сложности 1: 
 ### Промпт 1
 **Инструмент:** Auto режим в Cursor.
-**Промпт:** 
+**Промпт:** "Write a single-purpose Go application that acts as a universal agent for a Credit Scoring system. It should read a Markdown configuration file on startup to determine its Role, Rules, and NATS Specialization (the queue it listens to). Keep the code lightweight. Provide the Go code and an example Markdown config for an 'Income Analyzer' agent."
 **Результат:** 
 ### Промпт 2
 ### Итого
