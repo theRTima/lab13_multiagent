@@ -13,6 +13,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource
+from risk_analysis import RiskAnalyzer
 
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
@@ -40,10 +41,12 @@ class PipelineStage:
 
 
 class CreditScoringOrchestrator:
-    def __init__(self, nats_url: str = "nats://localhost:4222"):
+    def __init__(self, nats_url: str = "nats://localhost:4222", enable_risk_analysis: bool = True):
         self.nats_url = nats_url
         self.nc = None
         self.tracer = self._init_tracer()
+        self.enable_risk_analysis = enable_risk_analysis
+        self.risk_analyzer = RiskAnalyzer() if enable_risk_analysis else None
         self.pipeline_stages = [
             PipelineStage(
                 name="Data Collection",
@@ -254,6 +257,21 @@ class CreditScoringOrchestrator:
             results = {"applicant_id": applicant_id, "stages": {}}
             current_data = applicant_data.copy()
 
+            # Perform risk analysis if enabled
+            if self.enable_risk_analysis and self.risk_analyzer:
+                risk_result = await self.perform_risk_analysis(current_data)
+                results["risk_analysis"] = risk_result
+                
+                if risk_result["risk_level"] == "HIGH":
+                    results["status"] = "blocked"
+                    results["block_reason"] = "HIGH risk detected by LLM analysis"
+                    span.set_attribute("status", "blocked")
+                    span.set_attribute("risk_level", "HIGH")
+                    logger.warning(f"\n✗ Application {applicant_id} BLOCKED due to HIGH risk")
+                    return results
+                else:
+                    logger.info(f"Risk analysis passed: {risk_result['risk_level']}")
+
             try:
                 for stage in self.pipeline_stages:
                     stage_result = await self.execute_stage(stage, current_data)
@@ -275,6 +293,23 @@ class CreditScoringOrchestrator:
                 logger.error(f"\n✗ Application {applicant_id} processing failed: {e}")
 
             return results
+
+    async def perform_risk_analysis(self, applicant_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Perform risk analysis using Ollama LLM
+        """
+        with self.tracer.start_as_current_span("risk_analysis") as span:
+            # Convert applicant data to text for analysis
+            text_data = json.dumps(applicant_data, indent=2)
+            
+            logger.info("Performing LLM-based risk analysis...")
+            result = self.risk_analyzer.analyze_risk(text_data)
+            
+            span.set_attribute("risk_level", result["risk_level"])
+            span.set_attribute("reasoning", result["reasoning"])
+            
+            logger.info(f"Risk analysis result: {result['risk_level']} - {result['reasoning']}")
+            return result
 
 
 async def main():
