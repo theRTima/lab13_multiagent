@@ -331,6 +331,16 @@ func (a *Agent) Start() error {
 		}
 	}
 
+	// Subscribe to status requests for scaler
+	statusSubject := fmt.Sprintf("agent.status.%s", strings.ReplaceAll(a.Role, " ", "."))
+	log.Printf("[%s] Subscribing to status subject: %s", a.Role, statusSubject)
+	_, err = a.nc.Subscribe(statusSubject, func(msg *nats.Msg) {
+		a.handleStatusRequest(msg)
+	})
+	if err != nil {
+		return fmt.Errorf("failed to subscribe to status %s: %w", statusSubject, err)
+	}
+
 	log.Printf("[%s] Subscribed successfully. Waiting for messages...", a.Role)
 	return nil
 }
@@ -381,6 +391,28 @@ func (a *Agent) handleMessage(msg *nats.Msg) {
 	a.mu.Lock()
 	a.queueLength--
 	a.mu.Unlock()
+}
+
+func (a *Agent) handleStatusRequest(msg *nats.Msg) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	status := map[string]interface{}{
+		"role":         a.Role,
+		"queue_length": a.queueLength,
+		"status":       "active",
+		"capacity":     a.maxCapacity,
+	}
+
+	response, err := json.Marshal(status)
+	if err != nil {
+		log.Printf("[%s] Failed to marshal status: %v", a.Role, err)
+		return
+	}
+
+	if err := msg.Respond(response); err != nil {
+		log.Printf("[%s] Failed to respond to status request: %v", a.Role, err)
+	}
 }
 
 func (a *Agent) handleAuction(msg *nats.Msg) {

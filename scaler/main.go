@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -134,7 +135,57 @@ func (s *Scaler) checkAndScale(ctx context.Context) {
 }
 
 func (s *Scaler) getAgentStatus(ctx context.Context, role string) (*AgentStatus, error) {
-	// Use Docker CLI to list containers with agent role label
+	// Query actual agent status via NATS
+	subject := fmt.Sprintf("agent.status.%s", strings.ReplaceAll(role, " ", "."))
+	
+	// Send request for status
+	request := map[string]string{
+		"type": "status_request",
+		"role": role,
+	}
+	requestData, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	// Subscribe to response
+	responseSubject := nats.NewInbox()
+	sub, err := s.nc.SubscribeSync(responseSubject)
+	if err != nil {
+		return nil, fmt.Errorf("failed to subscribe to response: %w", err)
+	}
+	defer sub.Unsubscribe()
+
+	// Publish request
+	if err := s.nc.PublishRequest(subject, responseSubject, requestData); err != nil {
+		return nil, fmt.Errorf("failed to publish request: %w", err)
+	}
+
+	// Wait for response with timeout
+	msg, err := sub.NextMsgWithContext(ctx)
+	if err != nil {
+		// If no response, use Docker to count containers as fallback
+		return s.getAgentStatusFallback(ctx, role)
+	}
+
+	// Parse response
+	var status struct {
+		Role        string `json:"role"`
+		QueueLength int    `json:"queue_length"`
+		Status      string `json:"status"`
+	}
+	if err := json.Unmarshal(msg.Data, &status); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	return &AgentStatus{
+		Role:        role,
+		QueueLength: status.QueueLength,
+	}, nil
+}
+
+func (s *Scaler) getAgentStatusFallback(ctx context.Context, role string) (*AgentStatus, error) {
+	// Fallback: Use Docker to count containers and estimate queue
 	cmd := exec.CommandContext(ctx, "docker", "ps", "-q", 
 		"--filter", fmt.Sprintf("label=agent.role=%s", role))
 	output, err := cmd.CombinedOutput()
@@ -144,13 +195,18 @@ func (s *Scaler) getAgentStatus(ctx context.Context, role string) (*AgentStatus,
 
 	containerCount := len(strings.Fields(string(output)))
 	
-	// Simulate queue length based on container count
-	// In production, this would query the actual agent via NATS
-	queueLength := containerCount * 3 // Simulate load
-	
+	// If no containers, assume no queue
+	if containerCount == 0 {
+		return &AgentStatus{
+			Role:        role,
+			QueueLength: 0,
+		}, nil
+	}
+
+	// If containers exist but no NATS response, assume moderate load
 	return &AgentStatus{
 		Role:        role,
-		QueueLength: queueLength,
+		QueueLength: containerCount, // Conservative estimate
 	}, nil
 }
 
