@@ -76,12 +76,11 @@ Final Result:
 ### Промпт 1
 **Инструмент:** Claude Haiku 4.5 в Agent режиме.
 **Промпт:** Create an agent who will save its condition into Redis (counters, stats, cache) and on reboot it will restore itsels. Can create a new md instruction file just for this client
-**Результат:** 
-### Промпт 2
+**Результат:** Новый файл с инструкциями для агента котоырй сохраняет свое состояние. Запуск redis через docker-compose. Запуск запоминающего агента через ./agent -config configs/stateful-agent-config.md, посыл данных через ./test_client -subject stateful.analytics -type task. После force stop и перезапуска агента состояние сохраняется.
 ### Итого
 - Количество промптов: 1
-- Что пришлось исправлять вручную: 
-- Время: ~
+- Что пришлось исправлять вручную: ничего
+- Время: ~ 15 минут
 ---
 ## Задание Повышенной сложности 5:Динамическое масштабирование
 ### Промпт 1

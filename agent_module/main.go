@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
+	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -35,6 +36,11 @@ type Agent struct {
 	baseCost           float64
 	costPerQueuedTask  float64
 	tracer             trace.Tracer
+	redisClient        *redis.Client
+	stateKey           string
+	counters           map[string]int64
+	stats              map[string]float64
+	cache              map[string]interface{}
 }
 
 type Message struct {
@@ -126,6 +132,116 @@ func parseMarkdownConfig(filename string) (*Agent, error) {
 	}
 
 	return agent, nil
+}
+
+func (a *Agent) ConnectRedis(redisAddr string) error {
+	a.redisClient = redis.NewClient(&redis.Options{
+		Addr:     redisAddr,
+		Password: "",
+		DB:       0,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := a.redisClient.Ping(ctx).Err(); err != nil {
+		return fmt.Errorf("failed to connect to Redis: %w", err)
+	}
+
+	a.stateKey = fmt.Sprintf("agent:%s:state", strings.ReplaceAll(a.Role, " ", "-"))
+	a.counters = make(map[string]int64)
+	a.stats = make(map[string]float64)
+	a.cache = make(map[string]interface{})
+
+	log.Printf("[%s] Connected to Redis at %s", a.Role, redisAddr)
+	return nil
+}
+
+func (a *Agent) saveState(ctx context.Context) error {
+	if a.redisClient == nil {
+		return nil
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	state := map[string]interface{}{
+		"counters": a.counters,
+		"stats":    a.stats,
+		"cache":    a.cache,
+	}
+
+	stateJSON, err := json.Marshal(state)
+	if err != nil {
+		return fmt.Errorf("failed to marshal state: %w", err)
+	}
+
+	if err := a.redisClient.Set(ctx, a.stateKey, stateJSON, 0).Err(); err != nil {
+		return fmt.Errorf("failed to save state to Redis: %w", err)
+	}
+
+	log.Printf("[%s] State saved to Redis (counters: %d, stats: %d, cache: %d)", a.Role, len(a.counters), len(a.stats), len(a.cache))
+	return nil
+}
+
+func (a *Agent) restoreState(ctx context.Context) error {
+	if a.redisClient == nil {
+		return nil
+	}
+
+	stateJSON, err := a.redisClient.Get(ctx, a.stateKey).Result()
+	if err == redis.Nil {
+		log.Printf("[%s] No saved state found in Redis, starting fresh", a.Role)
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to get state from Redis: %w", err)
+	}
+
+	var state struct {
+		Counters map[string]int64         `json:"counters"`
+		Stats    map[string]float64       `json:"stats"`
+		Cache    map[string]interface{}   `json:"cache"`
+	}
+
+	if err := json.Unmarshal([]byte(stateJSON), &state); err != nil {
+		return fmt.Errorf("failed to unmarshal state: %w", err)
+	}
+
+	a.mu.Lock()
+	a.counters = state.Counters
+	a.stats = state.Stats
+	a.cache = state.Cache
+	a.mu.Unlock()
+
+	log.Printf("[%s] State restored from Redis (counters: %d, stats: %d, cache: %d)", a.Role, len(a.counters), len(a.stats), len(a.cache))
+	return nil
+}
+
+func (a *Agent) incrementCounter(name string, delta int64) int64 {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.counters[name] += delta
+	return a.counters[name]
+}
+
+func (a *Agent) updateStat(name string, value float64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.stats[name] = value
+}
+
+func (a *Agent) getCache(key string) (interface{}, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	val, ok := a.cache[key]
+	return val, ok
+}
+
+func (a *Agent) setCache(key string, value interface{}) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.cache[key] = value
 }
 
 func initTracer(serviceName string) (trace.Tracer, error) {
@@ -364,14 +480,22 @@ func (a *Agent) calculateBid(ctx context.Context, request AuctionRequest) Bid {
 }
 
 func (a *Agent) Close() {
+	ctx := context.Background()
+	if err := a.saveState(ctx); err != nil {
+		log.Printf("[%s] Failed to save state on shutdown: %v", a.Role, err)
+	}
 	if a.nc != nil {
 		a.nc.Close()
+	}
+	if a.redisClient != nil {
+		a.redisClient.Close()
 	}
 }
 
 func main() {
 	configFile := flag.String("config", "configs/income-analyzer-config.md", "Path to markdown config file")
 	natsURL := flag.String("nats", nats.DefaultURL, "NATS server URL")
+	redisURL := flag.String("redis", "localhost:6379", "Redis server URL")
 	flag.Parse()
 
 	agent, err := parseMarkdownConfig(*configFile)
@@ -388,6 +512,16 @@ func main() {
 	} else {
 		agent.tracer = tracer
 		log.Printf("OpenTelemetry tracer initialized for: %s", agent.Role)
+	}
+
+	// Connect to Redis for state persistence
+	if err := agent.ConnectRedis(*redisURL); err != nil {
+		log.Printf("Failed to connect to Redis (continuing without state persistence): %v", err)
+	} else {
+		// Restore state from Redis
+		if err := agent.restoreState(context.Background()); err != nil {
+			log.Printf("Failed to restore state from Redis: %v", err)
+		}
 	}
 
 	if err := agent.Connect(*natsURL); err != nil {
