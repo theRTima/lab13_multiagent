@@ -134,3 +134,26 @@ Then run:
 - **Observable** — Log output includes Role, message type, trace IDs
 - **Extensible** — Rule matching uses regex patterns
 - **Request/Reply** — Built-in NATS reply handling for synchronous workflows
+- **Auction Mechanism** — Agents bid on tasks; orchestrator selects lowest cost
+
+---
+
+## Python Orchestrator
+
+The Credit Scoring pipeline is orchestrated by a Python service using `nats-py` and asyncio. See `python/README.md` for details.
+
+### Quick Start
+
+```bash
+cd python
+pip install -r requirements.txt
+python orchestrator.py
+```
+
+### Pipeline Stages
+
+1. **Data Collection** — Validate applicant documents
+2. **Income Analysis** — Analyze income and employment
+3. **Risk Evaluation** — Calculate credit risk and make decision
+
+Each stage runs a competitive auction—the lowest-cost agent wins the task.

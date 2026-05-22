@@ -18,10 +18,14 @@
 **Промпт:** "Write a simple test client for sending tasks and auction requests to the agent"
 **Результат** test_client.go файл. Отправляет запросы агенту. При запросе go run test_client.go -subject auction.income_eval -type auction агент отвечает 2026/05/22 18:33:34 [Income Analyzer] Received auction for income_eval (trace: trace-1779464014)
 2026/05/22 18:33:34 [Income Analyzer] Submitted bid: cost=1.00, load=0/100 (trace: trace-1779464014)
+### Промпт 3
+**Инструмент:** Claude Haiku 4.5 в Agent режиме.
+**Промпт:** "write an asyncio Python orchestrator using nats-py. It needs to manage a Credit Scoring pipeline: Data Collection -> Income Analysis -> Risk Evaluation. Add needed agent instructions into configs folder. The orchestrator must broadcast tasks, wait a few milliseconds to collect bids from the Go agents, assign the task to the lowest bidder, and handle timeouts (retry up to 3 times). Provide the Python code."
+**Результат** 
 ### Итого
-- Количество промптов: 2
-- Что пришлось исправлять вручную: ничего
-- Время: ~ 20 минут
+- Количество промптов: 3
+- Что пришлось исправлять вручную: создал make file для более удобного билда и теста работы.
+- Время: ~ 30 минут
 ---
 ## Задание Повышенной сложности 3: Распределённая трассировка (Jaeger)
 ### Промпт 1
