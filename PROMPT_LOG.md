@@ -66,17 +66,16 @@ Final Result:
 ### Промпт 1
 **Инструмент:** Claude Haiku 4.5 в Agent режиме.
 **Промпт:** "Now integrate OpenTelemetry into agents and orchestrator. also setup Trace collection in Jaeger, which need to be launched in docker. Visualize full task completeion path"
-**Результат:** файлы для докера, интеграция в агенты и оркестратор. Работа как ожидалось. Jaeger interface on http://localhost:16686
-### Промпт 2
+**Результат:** файлы для докера, интеграция в агенты и оркестратор. Работа как ожидалось. Jaeger interface on http://localhost:16686. Все агенты видны, все отслеживается
 ### Итого
 - Количество промптов: 1
-- Что пришлось исправлять вручную: 
-- Время: ~
+- Что пришлось исправлять вручную: ничего
+- Время: ~ 10 минут.
 ---
 ## Задание Повышенной сложности 4:Агент с состоянием (Redis)
 ### Промпт 1
 **Инструмент:** Claude Haiku 4.5 в Agent режиме.
-**Промпт:** 
+**Промпт:** Create an agent who will save its condition into Redis (counters, stats, cache) and on reboot it will restore itsels. Can create a new md instruction file just for this client
 **Результат:** 
 ### Промпт 2
 ### Итого
