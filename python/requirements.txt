@@ -1,2 +1,5 @@
 nats-py==2.7.0
 asyncio
+opentelemetry-api==1.28.2
+opentelemetry-sdk==1.28.2
+opentelemetry-exporter-otlp==1.28.2

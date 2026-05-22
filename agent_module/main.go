@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -12,6 +13,14 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Agent struct {
@@ -25,6 +34,7 @@ type Agent struct {
 	maxCapacity        int
 	baseCost           float64
 	costPerQueuedTask  float64
+	tracer             trace.Tracer
 }
 
 type Message struct {
@@ -118,6 +128,37 @@ func parseMarkdownConfig(filename string) (*Agent, error) {
 	return agent, nil
 }
 
+func initTracer(serviceName string) (trace.Tracer, error) {
+	ctx := context.Background()
+
+	exporter, err := otlptracegrpc.New(ctx,
+		otlptracegrpc.WithInsecure(),
+		otlptracegrpc.WithEndpoint("localhost:4317"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create OTLP exporter: %w", err)
+	}
+
+	res, err := resource.New(ctx,
+		resource.WithAttributes(
+			semconv.ServiceName(serviceName),
+			semconv.ServiceVersion("1.0.0"),
+		),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create resource: %w", err)
+	}
+
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exporter),
+		sdktrace.WithResource(res),
+	)
+
+	otel.SetTracerProvider(tp)
+
+	return tp.Tracer("agent-tracer"), nil
+}
+
 func (a *Agent) Connect(natsURL string) error {
 	var err error
 	a.nc, err = nats.Connect(natsURL)
@@ -158,19 +199,30 @@ func (a *Agent) Start() error {
 }
 
 func (a *Agent) handleMessage(msg *nats.Msg) {
+	ctx := context.Background()
 	var request Message
 	if err := json.Unmarshal(msg.Data, &request); err != nil {
 		log.Printf("[%s] Failed to unmarshal message: %v", a.Role, err)
 		return
 	}
 
+	ctx, span := a.tracer.Start(ctx, "handleMessage",
+		trace.WithAttributes(
+			attribute.String("agent.role", a.Role),
+			attribute.String("message.type", request.Type),
+			attribute.String("trace.id", request.TraceID),
+		),
+	)
+	defer span.End()
+
 	log.Printf("[%s] Processing %s (trace: %s)", a.Role, request.Type, request.TraceID)
 
 	a.mu.Lock()
 	a.queueLength++
+	span.SetAttributes(attribute.Int("agent.queue_length", a.queueLength))
 	a.mu.Unlock()
 
-	result, respErr := a.process(request)
+	result, respErr := a.process(ctx, request)
 
 	response := Response{
 		Result:  result,
@@ -178,11 +230,15 @@ func (a *Agent) handleMessage(msg *nats.Msg) {
 	}
 	if respErr != nil {
 		response.Error = respErr.Error()
+		span.SetStatus(codes.Error, respErr.Error())
+		span.RecordError(respErr)
 	}
 
 	respData, _ := json.Marshal(response)
 	if err := a.nc.Publish(msg.Reply, respData); err != nil {
 		log.Printf("[%s] Failed to publish reply: %v", a.Role, err)
+		span.SetStatus(codes.Error, "Failed to publish reply")
+		span.RecordError(err)
 	}
 
 	a.mu.Lock()
@@ -191,31 +247,59 @@ func (a *Agent) handleMessage(msg *nats.Msg) {
 }
 
 func (a *Agent) handleAuction(msg *nats.Msg) {
+	ctx := context.Background()
 	var request AuctionRequest
 	if err := json.Unmarshal(msg.Data, &request); err != nil {
 		log.Printf("[%s] Failed to unmarshal auction: %v", a.Role, err)
 		return
 	}
 
+	ctx, span := a.tracer.Start(ctx, "handleAuction",
+		trace.WithAttributes(
+			attribute.String("agent.role", a.Role),
+			attribute.String("auction.task_type", request.TaskType),
+			attribute.String("trace.id", request.TraceID),
+		),
+	)
+	defer span.End()
+
 	log.Printf("[%s] Received auction for %s (trace: %s)", a.Role, request.TaskType, request.TraceID)
 
-	bid := a.calculateBid(request)
+	bid := a.calculateBid(ctx, request)
 	bidData, _ := json.Marshal(bid)
 
 	if err := a.nc.Publish(msg.Reply, bidData); err != nil {
 		log.Printf("[%s] Failed to publish bid: %v", a.Role, err)
+		span.SetStatus(codes.Error, "Failed to publish bid")
+		span.RecordError(err)
 	}
 
+	span.SetAttributes(
+		attribute.Float64("bid.cost", bid.Cost),
+		attribute.Int("bid.current_load", bid.CurrentLoad),
+		attribute.Int("bid.capacity", bid.Capacity),
+		attribute.Int("bid.estimated_time_ms", bid.EstimatedTime),
+	)
 	log.Printf("[%s] Submitted bid: cost=%.2f, load=%d/%d (trace: %s)", a.Role, bid.Cost, bid.CurrentLoad, bid.Capacity, request.TraceID)
 }
 
-func (a *Agent) process(msg Message) (interface{}, error) {
+func (a *Agent) process(ctx context.Context, msg Message) (interface{}, error) {
+	ctx, span := a.tracer.Start(ctx, "process",
+		trace.WithAttributes(
+			attribute.String("message.type", msg.Type),
+		),
+	)
+	defer span.End()
+
 	for _, rule := range a.Rules {
 		if matchesRule(rule, msg.Type) {
-			return a.applyRule(rule, msg.Data)
+			return a.applyRule(ctx, rule, msg.Data)
 		}
 	}
-	return nil, fmt.Errorf("no matching rule for type: %s", msg.Type)
+	err := fmt.Errorf("no matching rule for type: %s", msg.Type)
+	span.SetStatus(codes.Error, err.Error())
+	span.RecordError(err)
+	return nil, err
 }
 
 func matchesRule(rule, msgType string) bool {
@@ -224,10 +308,21 @@ func matchesRule(rule, msgType string) bool {
 	return matched
 }
 
-func (a *Agent) applyRule(rule string, data map[string]interface{}) (interface{}, error) {
+func (a *Agent) applyRule(ctx context.Context, rule string, data map[string]interface{}) (interface{}, error) {
+	ctx, span := a.tracer.Start(ctx, "applyRule",
+		trace.WithAttributes(
+			attribute.String("agent.role", a.Role),
+			attribute.String("rule", rule),
+		),
+	)
+	defer span.End()
+
 	parts := strings.SplitN(rule, ":", 2)
 	if len(parts) < 2 {
-		return nil, fmt.Errorf("invalid rule format")
+		err := fmt.Errorf("invalid rule format")
+		span.SetStatus(codes.Error, err.Error())
+		span.RecordError(err)
+		return nil, err
 	}
 
 	action := strings.TrimSpace(parts[1])
@@ -240,13 +335,22 @@ func (a *Agent) applyRule(rule string, data map[string]interface{}) (interface{}
 	}, nil
 }
 
-func (a *Agent) calculateBid(request AuctionRequest) Bid {
+func (a *Agent) calculateBid(ctx context.Context, request AuctionRequest) Bid {
+	ctx, span := a.tracer.Start(ctx, "calculateBid")
+	defer span.End()
+
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	loadRatio := float64(a.queueLength) / float64(a.maxCapacity)
 	cost := a.baseCost + (a.costPerQueuedTask * float64(a.queueLength))
 	estimatedTime := 100 + (int(loadRatio) * 1000)
+
+	span.SetAttributes(
+		attribute.Float64("bid.load_ratio", loadRatio),
+		attribute.Float64("bid.base_cost", a.baseCost),
+		attribute.Float64("bid.cost_per_queued_task", a.costPerQueuedTask),
+	)
 
 	return Bid{
 		AgentRole:     a.Role,
@@ -276,6 +380,15 @@ func main() {
 	}
 
 	log.Printf("Loaded agent: Role=%s, Specialization=%s, Rules=%d, AuctionSubjects=%d", agent.Role, agent.NATSSpecialization, len(agent.Rules), len(agent.AuctionSubjects))
+
+	// Initialize OpenTelemetry tracer
+	tracer, err := initTracer(agent.Role)
+	if err != nil {
+		log.Printf("Failed to initialize tracer (continuing without tracing): %v", err)
+	} else {
+		agent.tracer = tracer
+		log.Printf("OpenTelemetry tracer initialized for: %s", agent.Role)
+	}
 
 	if err := agent.Connect(*natsURL); err != nil {
 		log.Fatalf("Failed to connect: %v", err)

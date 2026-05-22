@@ -21,7 +21,42 @@
 ### Промпт 3
 **Инструмент:** Claude Haiku 4.5 в Agent режиме.
 **Промпт:** "write an asyncio Python orchestrator using nats-py. It needs to manage a Credit Scoring pipeline: Data Collection -> Income Analysis -> Risk Evaluation. Add needed agent instructions into configs folder. The orchestrator must broadcast tasks, wait a few milliseconds to collect bids from the Go agents, assign the task to the lowest bidder, and handle timeouts (retry up to 3 times). Provide the Python code."
-**Результат** python оркестратор. Также создались недостающие инструкции для агентов. Запустил в 3 окнах терминала агентов с разными инструкциями. Запуск по типу go run agent_module/main.go -config configs/income-analyzer-config.md
+**Результат** python оркестратор. Также создались недостающие инструкции для агентов. Запустил в 3 окнах терминала агентов с разными инструкциями. Запуск по типу go run agent_module/main.go -config configs/income-analyzer-config.md. Оркестратор успешно справился ✓ Application APP002 processing completed
+
+Final Result:
+{
+  "applicant_id": "APP002",
+  "stages": {
+    "Data Collection": {
+      "result": {
+        "action": "Gather applicant information and documents",
+        "input": {
+          "annual_income": 120000,
+          "applicant_id": "APP002",
+          "documents": [
+            "tax_return",
+            "bank_statements"
+          ],
+          "employment_status": "self-employed",
+          "name": "Jane Smith"
+        },
+        "status": "processed"
+      },
+      "trace_id": "trace-d6bf2888"
+    },
+    "Income Analysis": {
+      "result": null,
+      "error": "no matching rule for type: income_analysis.process",
+      "trace_id": "trace-792bc60a"
+    },
+    "Risk Evaluation": {
+      "result": null,
+      "error": "no matching rule for type: risk_evaluation.process",
+      "trace_id": "trace-864250f2"
+    }
+  },
+  "status": "completed"
+}
 ### Итого
 - Количество промптов: 3
 - Что пришлось исправлять вручную: создал make file для более удобного билда и теста работы.
@@ -30,8 +65,8 @@
 ## Задание Повышенной сложности 3: Распределённая трассировка (Jaeger)
 ### Промпт 1
 **Инструмент:** Claude Haiku 4.5 в Agent режиме.
-**Промпт:** 
-**Результат:** 
+**Промпт:** "Now integrate OpenTelemetry into agents and orchestrator. also setup Trace collection in Jaeger, which need to be launched in docker. Visualize full task completeion path"
+**Результат:** файлы для докера, интеграция в агенты и оркестратор. Работа как ожидалось. Jaeger interface on http://localhost:16686
 ### Промпт 2
 ### Итого
 - Количество промптов: 1
