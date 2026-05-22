@@ -79,7 +79,6 @@ class CreditScoringOrchestrator:
         logger.info(f"[{stage.name}] Starting auction on {stage.auction_subject}")
 
         bids = []
-        received_event = asyncio.Event()
 
         async def bid_handler(msg):
             try:
@@ -90,34 +89,23 @@ class CreditScoringOrchestrator:
                     f"[{stage.name}] Received bid from {bid.agent_role}: "
                     f"cost={bid.cost:.2f}, load={bid.current_load}/{bid.capacity}"
                 )
-                received_event.set()
             except Exception as e:
                 logger.error(f"Failed to parse bid: {e}")
 
-        # Subscribe to bids (bids come back on same reply-to subject)
+        # Subscribe to bids (bids come back on reply-to subject)
         inbox = self.nc.new_inbox()
         sub = await self.nc.subscribe(inbox)
 
-        async def read_bids():
-            try:
-                async for msg in sub.unsubscribe(after=10):  # Max 10 bids
-                    await bid_handler(msg)
-            except Exception:
-                pass
-
-        # Start reading bids in background
-        read_task = asyncio.create_task(read_bids())
-
-        # Broadcast auction
+        # Broadcast auction with reply-to inbox
         try:
             await self.nc.publish(
-            stage.auction_subject,
-            json.dumps(auction_request).encode(),
-            reply=inbox,
-        )
+                stage.auction_subject,
+                json.dumps(auction_request).encode(),
+                reply=inbox,
+            )
         except Exception as e:
             logger.error(f"Failed to publish auction: {e}")
-            read_task.cancel()
+            await sub.unsubscribe()
             return None
 
         # Wait for bids with timeout
@@ -128,8 +116,19 @@ class CreditScoringOrchestrator:
             )
         except asyncio.TimeoutError:
             pass
+
+        # Process any pending messages
+        try:
+            msg = await sub.next_msg(timeout=0.1)
+            while msg:
+                await bid_handler(msg)
+                try:
+                    msg = await sub.next_msg(timeout=0.1)
+                except nats.errors.TimeoutError:
+                    break
+        except nats.errors.TimeoutError:
+            pass
         finally:
-            read_task.cancel()
             await sub.unsubscribe()
 
         if not bids:
