@@ -96,8 +96,7 @@ Final Result:
 ### Промпт 1
 **Инструмент:** Claude Haiku 4.5 в Agent режиме.
 **Промпт:** "Now create a model where agents are auctioning for the task. Each agent rates its ability and orchestrator schooses agent with least cost or best compatability"
-**Результат:** 
-### Промпт 2
+**Результат:**  Улучшенная модель аукциона с учетом стоимости и совместимости. Оркестратор сам выбирает лучшего агента.
 ### Итого
 - Количество промптов: 1
 - Что пришлось исправлять вручную: 
