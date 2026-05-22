@@ -21,7 +21,7 @@
 ### Промпт 3
 **Инструмент:** Claude Haiku 4.5 в Agent режиме.
 **Промпт:** "write an asyncio Python orchestrator using nats-py. It needs to manage a Credit Scoring pipeline: Data Collection -> Income Analysis -> Risk Evaluation. Add needed agent instructions into configs folder. The orchestrator must broadcast tasks, wait a few milliseconds to collect bids from the Go agents, assign the task to the lowest bidder, and handle timeouts (retry up to 3 times). Provide the Python code."
-**Результат** 
+**Результат** python оркестратор. Также создались недостающие инструкции для агентов. Запустил в 3 окнах терминала агентов с разными инструкциями. Запуск по типу go run agent_module/main.go -config configs/income-analyzer-config.md
 ### Итого
 - Количество промптов: 3
 - Что пришлось исправлять вручную: создал make file для более удобного билда и теста работы.

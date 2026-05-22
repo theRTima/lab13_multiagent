@@ -111,10 +111,10 @@ class CreditScoringOrchestrator:
         # Broadcast auction
         try:
             await self.nc.publish(
-                stage.auction_subject,
-                json.dumps(auction_request).encode(),
-                reply_to=inbox,
-            )
+            stage.auction_subject,
+            json.dumps(auction_request).encode(),
+            reply=inbox,
+        )
         except Exception as e:
             logger.error(f"Failed to publish auction: {e}")
             read_task.cancel()
