@@ -98,7 +98,8 @@ func (a *Agent) Start() error {
 	queue := a.NATSSpecialization
 	log.Printf("[%s] Agent starting, listening on queue: %s", a.Role, queue)
 
-	_, err := a.nc.QueueSubscribe(queue, a.Role, func(msg *nats.Msg) {
+	groupName := strings.ToLower(strings.ReplaceAll(a.Role, " ", "-"))
+	_, err := a.nc.QueueSubscribe(queue, groupName, func(msg *nats.Msg) {
 		a.handleMessage(msg)
 	})
 	if err != nil {

@@ -4,7 +4,7 @@
 
 Analyzes applicant income from employment, investments, and other sources to determine creditworthiness contribution.
 
-# NATS Specialization: income_analysis
+# NATS Specialization: income.analysis
 
 ## Rules
 

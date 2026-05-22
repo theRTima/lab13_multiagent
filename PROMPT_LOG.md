@@ -2,7 +2,7 @@
 ### Промпт 1
 **Инструмент:** Claude Haiku 4.5 в Agent режиме.
 **Промпт:** "Write a single-purpose Go application that acts as a universal agent for a Credit Scoring system. It should read a Markdown configuration file on startup to determine its Role, Rules, and NATS Specialization (the queue it listens to). Keep the code lightweight. Provide the Go code and an example Markdown config for an 'Income Analyzer' agent."
-**Результат:** Агент и md файл с инструкциями. Запускается как и ожидалосью
+**Результат:** Агент и md файл с инструкциями. Запускается как и ожидалосью. После дебага все успешно запустилось - 2026/05/22 18:25:45 [Income Analyzer] Subscribed successfully. Waiting for messages..
 ### Итого
 - Количество промптов: 1
 - Что пришлось исправлять вручную: Пришлось вручную запускать локальный NATS сервер в docker, на стандартном порту 4222 (docker run -p 4222:4222 nats:latest). Также починил очередь в NATS (не принимала точки)
