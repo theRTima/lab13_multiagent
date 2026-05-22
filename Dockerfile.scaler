@@ -1,0 +1,41 @@
+# Build stage
+FROM golang:1.22-alpine AS builder
+
+WORKDIR /app
+
+# Copy go mod files
+COPY scaler/go.mod ./scaler/
+
+# Download dependencies
+RUN cd scaler && go mod download
+
+# Copy source code
+COPY scaler ./scaler
+
+# Build the scaler
+RUN cd scaler && CGO_ENABLED=0 GOOS=linux go build -o /scaler .
+
+# Runtime stage
+FROM alpine:latest
+
+RUN apk --no-cache add ca-certificates docker-cli
+
+WORKDIR /app
+
+# Copy the binary from builder
+COPY --from=builder /scaler ./scaler
+
+# Copy configs
+COPY configs ./configs
+
+# Set environment variables
+ENV NATS_URL=nats://localhost:4222
+ENV SCALE_THRESHOLD=5
+ENV SCALE_DOWN_THRESHOLD=2
+ENV MIN_INSTANCES=1
+ENV MAX_INSTANCES=5
+ENV CHECK_INTERVAL=10s
+ENV AGENT_IMAGE=agent:latest
+
+# Run the scaler
+CMD ["./scaler", "-nats", "${NATS_URL}", "-scale-threshold", "${SCALE_THRESHOLD}", "-scale-down-threshold", "${SCALE_DOWN_THRESHOLD}", "-min-instances", "${MIN_INSTANCES}", "-max-instances", "${MAX_INSTANCES}", "-check-interval", "${CHECK_INTERVAL}", "-agent-image", "${AGENT_IMAGE}"]

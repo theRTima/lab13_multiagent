@@ -85,13 +85,12 @@ Final Result:
 ## Задание Повышенной сложности 5:Динамическое масштабирование
 ### Промпт 1
 **Инструмент:** Claude Haiku 4.5 в Agent режиме.
-**Промпт:** 
-**Результат:** 
-### Промпт 2
+**Промпт:** "Create a system which will automatically launch another agent instance under high load (queue > N) use docker API. Container name - scaler."
+**Результат:** Scaler в docker-compose.yml запущен и работает. Запуск скейлера через ./scaler -nats nats://localhost:4222 -scale-threshold 5 -scale-down-threshold 2 -min-instances 1 -max-instances 5 -check-interval 10s -agent-image agent:latest. Автоматически запускает по 1 экземпляру агента. При уменьшении нагрузки убирает экземпляры. Можно увидеть их с помощью docker ps --filter "label=managed-by=scaler"
 ### Итого
 - Количество промптов: 1
-- Что пришлось исправлять вручную: 
-- Время: ~
+- Что пришлось исправлять вручную: ничего
+- Время: ~ 20
 ---
 ## Задание Повышенной сложности 6:Аукционное распределение задач
 ### Промпт 1
@@ -112,7 +111,7 @@ Final Result:
 ### Промпт 2
 ### Итого
 - Количество промптов: 1
-- Что пришлось исправлять вручную: []
+- Что пришлось исправлять вручную: Настройка простого Qwen3.5:latest через Ollama.
 - Время: ~
 ---
 ## Задание Повышенной сложности 8:Веб-интерфейс для мониторинга агентов

@@ -28,5 +28,25 @@ services:
       - redis_data:/data
     command: redis-server --appendonly yes
 
+  scaler:
+    build:
+      context: .
+      dockerfile: Dockerfile.scaler
+    container_name: scaler
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./configs:/app/configs
+    environment:
+      - NATS_URL=nats://host.docker.internal:4222
+      - SCALE_THRESHOLD=5
+      - SCALE_DOWN_THRESHOLD=2
+      - MIN_INSTANCES=1
+      - MAX_INSTANCES=5
+      - CHECK_INTERVAL=10s
+      - AGENT_IMAGE=agent:latest
+    depends_on:
+      - redis
+    network_mode: host
+
 volumes:
   redis_data:
