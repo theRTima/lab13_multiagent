@@ -8,6 +8,8 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/nats-io/nats.go"
 )
@@ -16,7 +18,13 @@ type Agent struct {
 	Role               string
 	Rules              []string
 	NATSSpecialization string
+	AuctionSubjects    []string
 	nc                 *nats.Conn
+	mu                 sync.Mutex
+	queueLength        int
+	maxCapacity        int
+	baseCost           float64
+	costPerQueuedTask  float64
 }
 
 type Message struct {
@@ -31,6 +39,21 @@ type Response struct {
 	TraceID string      `json:"trace_id"`
 }
 
+type AuctionRequest struct {
+	TaskType string `json:"task_type"`
+	TraceID  string `json:"trace_id"`
+}
+
+type Bid struct {
+	AgentRole       string    `json:"agent_role"`
+	Cost            float64   `json:"cost"`
+	EstimatedTime   int       `json:"estimated_time_ms"`
+	CurrentLoad     int       `json:"current_load"`
+	Capacity        int       `json:"capacity"`
+	TraceID         string    `json:"trace_id"`
+	Timestamp       time.Time `json:"timestamp"`
+}
+
 func parseMarkdownConfig(filename string) (*Agent, error) {
 	content, err := os.ReadFile(filename)
 	if err != nil {
@@ -38,7 +61,11 @@ func parseMarkdownConfig(filename string) (*Agent, error) {
 	}
 
 	agent := &Agent{
-		Rules: []string{},
+		Rules:              []string{},
+		AuctionSubjects:    []string{},
+		maxCapacity:        100,
+		baseCost:           1.0,
+		costPerQueuedTask:  0.5,
 	}
 
 	lines := strings.Split(string(content), "\n")
@@ -51,6 +78,16 @@ func parseMarkdownConfig(filename string) (*Agent, error) {
 
 		if strings.HasPrefix(line, "# NATS Specialization:") {
 			agent.NATSSpecialization = strings.TrimSpace(strings.TrimPrefix(line, "# NATS Specialization:"))
+		}
+
+		if strings.HasPrefix(line, "# Auction Subjects:") {
+			subjects := strings.TrimSpace(strings.TrimPrefix(line, "# Auction Subjects:"))
+			for _, s := range strings.Split(subjects, ",") {
+				trimmed := strings.TrimSpace(s)
+				if trimmed != "" {
+					agent.AuctionSubjects = append(agent.AuctionSubjects, trimmed)
+				}
+			}
 		}
 
 		if strings.HasPrefix(line, "## Rules") {
@@ -106,6 +143,16 @@ func (a *Agent) Start() error {
 		return fmt.Errorf("failed to subscribe: %w", err)
 	}
 
+	for _, auctionSubject := range a.AuctionSubjects {
+		log.Printf("[%s] Subscribing to auction subject: %s", a.Role, auctionSubject)
+		_, err := a.nc.Subscribe(auctionSubject, func(msg *nats.Msg) {
+			a.handleAuction(msg)
+		})
+		if err != nil {
+			return fmt.Errorf("failed to subscribe to auction %s: %w", auctionSubject, err)
+		}
+	}
+
 	log.Printf("[%s] Subscribed successfully. Waiting for messages...", a.Role)
 	return nil
 }
@@ -118,6 +165,10 @@ func (a *Agent) handleMessage(msg *nats.Msg) {
 	}
 
 	log.Printf("[%s] Processing %s (trace: %s)", a.Role, request.Type, request.TraceID)
+
+	a.mu.Lock()
+	a.queueLength++
+	a.mu.Unlock()
 
 	result, respErr := a.process(request)
 
@@ -133,6 +184,29 @@ func (a *Agent) handleMessage(msg *nats.Msg) {
 	if err := a.nc.Publish(msg.Reply, respData); err != nil {
 		log.Printf("[%s] Failed to publish reply: %v", a.Role, err)
 	}
+
+	a.mu.Lock()
+	a.queueLength--
+	a.mu.Unlock()
+}
+
+func (a *Agent) handleAuction(msg *nats.Msg) {
+	var request AuctionRequest
+	if err := json.Unmarshal(msg.Data, &request); err != nil {
+		log.Printf("[%s] Failed to unmarshal auction: %v", a.Role, err)
+		return
+	}
+
+	log.Printf("[%s] Received auction for %s (trace: %s)", a.Role, request.TaskType, request.TraceID)
+
+	bid := a.calculateBid(request)
+	bidData, _ := json.Marshal(bid)
+
+	if err := a.nc.Publish(msg.Reply, bidData); err != nil {
+		log.Printf("[%s] Failed to publish bid: %v", a.Role, err)
+	}
+
+	log.Printf("[%s] Submitted bid: cost=%.2f, load=%d/%d (trace: %s)", a.Role, bid.Cost, bid.CurrentLoad, bid.Capacity, request.TraceID)
 }
 
 func (a *Agent) process(msg Message) (interface{}, error) {
@@ -166,6 +240,25 @@ func (a *Agent) applyRule(rule string, data map[string]interface{}) (interface{}
 	}, nil
 }
 
+func (a *Agent) calculateBid(request AuctionRequest) Bid {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	loadRatio := float64(a.queueLength) / float64(a.maxCapacity)
+	cost := a.baseCost + (a.costPerQueuedTask * float64(a.queueLength))
+	estimatedTime := 100 + (int(loadRatio) * 1000)
+
+	return Bid{
+		AgentRole:     a.Role,
+		Cost:          cost,
+		EstimatedTime: estimatedTime,
+		CurrentLoad:   a.queueLength,
+		Capacity:      a.maxCapacity,
+		TraceID:       request.TraceID,
+		Timestamp:     time.Now(),
+	}
+}
+
 func (a *Agent) Close() {
 	if a.nc != nil {
 		a.nc.Close()
@@ -182,7 +275,7 @@ func main() {
 		log.Fatalf("Failed to parse config: %v", err)
 	}
 
-	log.Printf("Loaded agent: Role=%s, Specialization=%s, Rules=%d", agent.Role, agent.NATSSpecialization, len(agent.Rules))
+	log.Printf("Loaded agent: Role=%s, Specialization=%s, Rules=%d, AuctionSubjects=%d", agent.Role, agent.NATSSpecialization, len(agent.Rules), len(agent.AuctionSubjects))
 
 	if err := agent.Connect(*natsURL); err != nil {
 		log.Fatalf("Failed to connect: %v", err)

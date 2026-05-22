@@ -6,6 +6,8 @@ Analyzes applicant income from employment, investments, and other sources to det
 
 # NATS Specialization: income.analysis
 
+# Auction Subjects: auction.income_eval, auction.risk_evaluation
+
 ## Rules
 
 - income.validate: Verify income documentation and amounts
