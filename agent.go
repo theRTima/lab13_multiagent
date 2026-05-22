@@ -56,8 +56,11 @@ func parseMarkdownConfig(filename string) (*Agent, error) {
 		if strings.HasPrefix(line, "## Rules") {
 			for j := i + 1; j < len(lines); j++ {
 				ruleLine := strings.TrimSpace(lines[j])
-				if ruleLine == "" || strings.HasPrefix(ruleLine, "#") {
+				if strings.HasPrefix(ruleLine, "#") {
 					break
+				}
+				if ruleLine == "" {
+					continue
 				}
 				if strings.HasPrefix(ruleLine, "- ") {
 					rule := strings.TrimSpace(strings.TrimPrefix(ruleLine, "- "))

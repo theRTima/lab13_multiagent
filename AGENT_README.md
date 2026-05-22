@@ -22,7 +22,7 @@ go build -o agent .
 
 [Description]
 
-# NATS Specialization: [queue.name]
+# NATS Specialization: [queue_name]
 
 ## Rules
 
